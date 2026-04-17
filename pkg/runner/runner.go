@@ -265,6 +265,20 @@ func (r *Runner) Run(ctx context.Context) error {
 		}
 	}
 
+	// Origin-header validation (DNS-rebinding protection per MCP 2025-11-25
+	// §"Security Warning") is wired here, after both middleware-population
+	// paths, because it is the single place where Host/Port/AllowedOrigins are
+	// fully resolved: the CLI builder (WithMiddlewareFromFlags) defers port
+	// resolution to validateConfig, so the effective port is not known at
+	// builder time. Prepending keeps Origin validation at the front of the
+	// chain so disallowed Origins are rejected before authentication or any
+	// business logic runs.
+	var err error
+	r.Config.MiddlewareConfigs, err = prependOriginMiddleware(r.Config.MiddlewareConfigs, r.Config)
+	if err != nil {
+		return fmt.Errorf("failed to add origin middleware: %w", err)
+	}
+
 	// Initialize embedded auth server if configured.
 	// This must happen before middleware creation so that the upstream token
 	// service is available to middleware factories (e.g., upstreamswap).
