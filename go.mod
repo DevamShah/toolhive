@@ -83,7 +83,7 @@ require github.com/getsentry/sentry-go/otel v0.44.1
 
 require github.com/hashicorp/golang-lru/v2 v2.0.7
 
-require go.starlark.net v0.0.0-20260522144826-ec58d4b459e2
+require go.starlark.net v0.0.0-20260613233743-8ba36ccb83fb
 
 require (
 	github.com/aws/aws-sdk-go-v2/internal/v4a v1.4.30 // indirect
