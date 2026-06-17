@@ -65,6 +65,12 @@ type coreVMCP struct {
 	// table, generalizing server.New's sessionComposerFactory (server.go:393).
 	composerFactory func(sessionRT *vmcp.RoutingTable, sessionTools []vmcp.Tool) composer.Composer
 
+	// workflowTelemetry records composite-tool execution metrics/traces. Nil when no
+	// telemetry provider is configured; its record method is nil-safe. Composite tools
+	// execute in the core now, so this carries the workflow instrumentation the legacy
+	// session-layer composite-tools decorator used to.
+	workflowTelemetry *workflowTelemetry
+
 	// stopStore stops the workflow state store's background cleanup goroutine.
 	// Captured at construction (the store is created internally, not injected) so
 	// Close is not a silent capability assertion. Guarded by closeOnce.
@@ -95,6 +101,13 @@ func New(cfg *Config) (VMCP, error) {
 	admission, err := newAdmission(cfg.Authz, cfg.ServerName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build admission seam: %w", err)
+	}
+
+	// Build the composite-tool telemetry instruments (nil when no provider). Done before
+	// the state store so an instrument-creation failure cannot leak its cleanup goroutine.
+	workflowTel, err := newWorkflowTelemetry(cfg.TelemetryProvider)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build workflow telemetry: %w", err)
 	}
 
 	backendClient := cfg.BackendClient
@@ -152,10 +165,10 @@ func New(cfg *Config) (VMCP, error) {
 
 	// composerFactory builds a composite-tool engine bound to a specific routing
 	// table, generalizing server.New's sessionComposerFactory (server.go:393-398).
-	// Workflow-level telemetry (toolhive_vmcp_workflow_*) is intentionally NOT wired
-	// here: that instrumentation lives in the session/Serve layer
-	// (sessionmanager/factory.go:174-176) and is added when the core is wired into
-	// Serve (#5439). This mirrors server.go:393-398, which is also uninstrumented.
+	// Workflow-level telemetry (toolhive_vmcp_workflow_*) is NOT recorded inside the
+	// engine: CallTool wraps each composite execution with c.workflowTelemetry.record
+	// (workflow_telemetry.go), reproducing the instrumentation the legacy session-layer
+	// composite-tools decorator emitted now that composites execute in the core.
 	composerFactory := func(sessionRT *vmcp.RoutingTable, sessionTools []vmcp.Tool) composer.Composer {
 		return composer.NewWorkflowEngine(
 			router.NewSessionRouter(sessionRT), backendClient, elicitationHandler,
@@ -176,14 +189,15 @@ func New(cfg *Config) (VMCP, error) {
 	}
 
 	return &coreVMCP{
-		aggregator:      cfg.Aggregator,
-		backendRegistry: cfg.BackendRegistry,
-		backendClient:   backendClient,
-		health:          cfg.HealthStatusProvider,
-		admission:       admission,
-		workflowDefs:    workflowDefs,
-		composerFactory: composerFactory,
-		stopStore:       stopStore,
+		aggregator:        cfg.Aggregator,
+		backendRegistry:   cfg.BackendRegistry,
+		backendClient:     backendClient,
+		health:            cfg.HealthStatusProvider,
+		admission:         admission,
+		workflowDefs:      workflowDefs,
+		composerFactory:   composerFactory,
+		workflowTelemetry: workflowTel,
+		stopStore:         stopStore,
 	}, nil
 }
 

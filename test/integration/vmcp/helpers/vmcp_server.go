@@ -207,6 +207,10 @@ func NewVMCPServer(
 		PassthroughHeaders: config.passthroughHeaders,
 		TelemetryProvider:  config.telemetryProvider,
 		SessionFactory:     sessionFactory,
+		// server.New routes through core.New + Serve, so the core is the single aggregator
+		// and the source of the advertised set; feed it the same aggregator the harness
+		// builds. Authz is unset (these tests use anonymous auth → allow-all).
+		Aggregator: agg,
 	}, rtr, backendClient, discoveryMgr, backendRegistry, config.workflowDefs)
 	require.NoError(tb, err, "failed to create vMCP server")
 

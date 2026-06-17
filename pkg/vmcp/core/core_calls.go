@@ -73,7 +73,9 @@ func (c *coreVMCP) CallTool(
 	// through to backend routing, matching the legacy decorator.
 	if def, ok := c.accessibleComposites(agg)[name]; ok {
 		engine := c.composerFactory(agg.RoutingTable, agg.Tools)
-		return executeComposite(ctx, engine, def, argsCopy)
+		return c.workflowTelemetry.record(ctx, def.Name, func(ctx context.Context) (*vmcp.ToolCallResult, error) {
+			return executeComposite(ctx, engine, def, argsCopy)
+		})
 	}
 
 	// Backend tool: route through a session router bound to the fresh table. The
